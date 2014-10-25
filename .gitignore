@@ -1,0 +1,5 @@
+log/*
+venv/
+config.py
+*~
+*.swp

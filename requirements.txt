@@ -1,0 +1,5 @@
+BeautifulSoup==3.2.1
+fogbugz==0.9.5
+requests==1.2.0
+parsedatetime==1.1.2
+web.py==0.37
