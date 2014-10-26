@@ -524,6 +524,13 @@ class Client(object):
             self.msg('NickServ', 'IDENTIFY {0}'.format(self.cfg.nickpass))
             time.sleep(5)
 
+        # drain the queue to deal with potential PONG request
+        try:
+            for msg in self.messages(drain=True):
+                continue
+        except Queue.Empty:
+            pass
+
         for (chname, pwd) in self.cfg.channels:
             if pwd is not None:
                 self.write(('JOIN', chname, pwd))
@@ -531,7 +538,7 @@ class Client(object):
                 self.write(('JOIN', chname))
             time.sleep(0.5)
 
-    def messages(self):
+    def messages(self, drain=False):
         while True:
             if not self.reader.is_alive():
                 return
@@ -544,7 +551,10 @@ class Client(object):
                     self.writer.write(("PONG", msg.text))
                 yield msg
             except Queue.Empty:
-                continue
+                if drain:
+                   raise
+                else:
+                    continue
 
     def action(self, recip, text):
         self.writer.action(recip, text)
