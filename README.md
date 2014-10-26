@@ -6,7 +6,7 @@ A simple, easily extendable IRC bot.
 
 Configuration
 -------------
-Edit config.py and specify all the things.
+Copy config.py.dist to config.py and edit all the things.
 
 Running gizzy
 -------------

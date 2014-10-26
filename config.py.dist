@@ -1,0 +1,22 @@
+# basic bot settings
+nick = "gizzy"
+# Password for NICKSERV, if your IRC network supports it
+#nickpass = "<nickpass>"
+logfile = "log/gizzy.log"
+
+channels = [
+#    ("#channel1", "password"),
+]
+
+owners = [
+    "davisp",
+    "wohali"
+]
+
+plugins = "plugins"
+
+httpev = {
+    "auth": ("username", "password")
+    "port": 9876
+}
+
