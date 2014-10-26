@@ -16,7 +16,7 @@ owners = [
 plugins = "plugins"
 
 httpev = {
-    "auth": ("username", "password")
+    "auth": ("username", "password"),
     "port": 9876
 }
 
