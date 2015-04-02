@@ -11,6 +11,7 @@ import optparse as op
 import os
 import Queue
 import re
+import ssl
 import socket
 import StringIO
 import sys
@@ -65,7 +66,8 @@ class Config(object):
         self.data = {
             "logfile": None,
             "host": "irc.freenode.net",
-            "port": 6667,
+            "port": 6697,
+            "use_ssl": True,
             "nick": "gizzy-{0:06d}".format(os.getpid()),
             "name": "GizzyBot {0:06d}".format(os.getpid()),
             "user": "gizzy-{0:06d}".format(os.getpid()),
@@ -511,6 +513,8 @@ class Client(object):
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if self.cfg.use_ssl:
+            self.sock = ssl.wrap_socket(self.sock)
         self.sock.connect((self.cfg.host, self.cfg.port))
         self.reader = Reader(self, self.sock)
         self.writer = Writer(self, self.sock)
