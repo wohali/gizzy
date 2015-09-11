@@ -33,11 +33,11 @@ Plugins have a load/unload life cycle. If a load function instantiates any
 permanent resource it should be removed when unloaded. A good example of
 this is to stop any threads that were started.
 
-Each plugin has two top level functions. `load` takes a single argument which is a reference to the IRC client object. If the plugin needs to alert IRC based
-on some external event (ie, sensu or pagerduty notifications) then it should
-store a reference to this object.
+Each plugin has three top level functions. `load` takes no arguments and
+optionally initialises your plugin. Bot state can be accessed via the
+six extra variables available.
 
-Any value returned from `load` is stored as the plugin's state.
+Any value returned from `load` is stored as the plugin's state, and will be passed as an optional argument to any plugin command..
 
 	# An optional function to load plugin state
     def load():
