@@ -19,6 +19,8 @@ import threading
 import time
 import traceback
 
+#grant access to gizzylib
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 TRACE = 1
 log = logging.getLogger("main")
@@ -27,9 +29,9 @@ log = logging.getLogger("main")
 STYLES = {
     "bold": "\x02",
     "reset": "\x0F",
-    "italic": "\x26",
-    "reverse": "\x26",
-    "underline": "\x37",
+    "italic": "\x06",
+    "reverse": "\x16",
+    "underline": "\x1F",
     "white": "\x0300",
     "black": "\x0301",
     "dark_blue": "\x0302",

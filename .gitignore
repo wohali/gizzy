@@ -1,5 +1,7 @@
 log/*
 venv/
+indexes/
 config.py
 *~
 *.swp
+*.pyc

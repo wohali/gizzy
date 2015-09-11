@@ -28,6 +28,7 @@ def sync(msg):
 @command(["reload"], require_owner=True)
 def reload(msg):
     "Reload all plugins"
+    msg.respond("reloading...")
     plugin_manager.load()
     msg.respond("reloaded")
     raise StopIteration
