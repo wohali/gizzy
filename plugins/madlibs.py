@@ -36,9 +36,21 @@ def gamethread(func):
 
 def generate_madlib(state):
     """Generates a Mad Lib from a line out of the chosen corpus."""
-    corpus = nlp.corpus(state['options']['corpus'])
-    with open(corpus, 'r') as f:
-        line = nlp.random_line(f)
+    if state['options']['corpus'] == "None":
+        name = None
+    else:
+        name = state['options']['corpus']
+    if state['options']['corporaset'] == "None":
+        set = None
+    else:
+        set = state['options']['corporaset']
+
+    # will raise IOError if corpus invalid
+    if name:
+        corpus = nlp.corpus(set=set, name=name)
+    else:
+        corpus = nlp.random_corpus(set=set)
+    line = nlp.random_line(corpus)
 
     doc = nlp.nlp(line)
 
@@ -94,7 +106,12 @@ def startround(msg, state):
     state['votes'] = { k: -1 for k, v in state['votes'].items() }
     state['entries'] = []
 
-    generate_madlib(state)
+    try:
+        generate_madlib(state)
+    except IOError as e:
+        msg.reply("Unable to locate corpus. Aborting game.")
+        log.debug("Corpus open failed: " + str(e))
+        killgame(state)
 
     msg.reply("======= Starting Round {0}/{1} =======".format(
             int(state['round']), state['options']['numrounds']
@@ -152,7 +169,7 @@ def voteround(msg, state):
 
     if len(state['entries']) == 0:
         msg.reply(bold + "ACHTUNG! No entries received! Ending game.")
-        killgame(msg, state)
+        killgame(state)
 
     random.shuffle(state['entries'])
 
@@ -389,7 +406,8 @@ def load():
             'warntime': 15,
             'numrounds': 8,
             'linemaxlen': 400,
-            'corpus': 'mcguffey',
+            'corporaset': 'McGuffey',
+            'corpus': 'None',
             'botplays': False,
             'shame': True
         }
