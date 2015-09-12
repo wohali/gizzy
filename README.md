@@ -150,6 +150,25 @@ argument:
 `rule` style functions also accept a `name` parameter that is used to
 refer to the function for things like `.help` and so on.
 
+<h2>gizzylib</h2>
+`gizzylib` is a set of functions designed to help plugins and share
+commonly used functionality. It is placed on the python path, so
+modules can be imported from gizzylib by any plugin
+
+<h3>nlp</h3>
+The `nlp` module declares an English instance of the
+[spaCy](http://spacy.io/) Natural Language Processing library as `nlp.nlp`.
+
+It also provides functionality to access various corpora stored
+under `gizzylib/corpora/<setname>` as textfiles. This is useful for
+giving the bot things to say or work with. A random corpus can be
+selected via `nlp.random_corpus` which takes a corpora set name, or
+an individual corpus can be loaded via `nlp.corpus`.
+
+Random lines from a corpus can be accessed in a memory-efficient
+fashion via `nlp.random_line(abspath)`.
+
+
 Credit
 ------
 gizzy was originally written by Paul Davis (@davisp) for Cloudant.
