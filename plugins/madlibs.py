@@ -36,22 +36,23 @@ def gamethread(func):
 
 def generate_madlib(state):
     """Generates a Mad Lib from a line out of the chosen corpus."""
-    if state['options']['corpus'] == "None":
-        name = None
-    else:
-        name = state['options']['corpus']
-    if state['options']['corporaset'] == "None":
-        set = None
-    else:
-        set = state['options']['corporaset']
+    if not state['corpus']:
+        if state['options']['corpus'] == "None":
+            name = None
+        else:
+            name = state['options']['corpus']
+        if state['options']['corporaset'] == "None":
+            set = None
+        else:
+            set = state['options']['corporaset']
 
-    # will raise IOError if corpus invalid
-    if name:
-        corpus = nlp.corpus(set=set, name=name)
-    else:
-        corpus = nlp.random_corpus(set=set)
-    line = nlp.random_line(corpus)
+        # will raise IOError if corpus invalid
+        if name:
+            state['corpus'] = nlp.corpus(set=set, name=name)
+        else:
+            state['corpus'] = nlp.random_corpus(set=set)
 
+    line = nlp.random_line(state['corpus'])
     doc = nlp.nlp(line)
 
     # truncate line if too long
@@ -64,7 +65,7 @@ def generate_madlib(state):
             )).strip()
             if len(line) + len(sent) > maxlen:
                 break
-            line += sent
+            line += sent + " "
         doc = nlp.nlp(line)
         
     ddict = defaultdict(list)
@@ -315,7 +316,9 @@ def reset(state):
         # Scores: { nick: score, ... }
         'scores': defaultdict(int),
         # Threads on timers, keyed by thread ident
-        'threads': {}
+        'threads': {},
+        # Absolute path to corpus file
+        'corpus': None
     })
 
 
