@@ -1,5 +1,6 @@
 """Natural Language Processing library"""
 
+import codecs
 import os
 import random
 import sys
@@ -17,7 +18,7 @@ def_text = "fourth_reader.txt"
 
 def random_line(fname):
     while True:
-        with open(fname, 'r') as afile:
+        with codecs.open(fname, 'r', 'utf-8') as afile:
             # thanks to http://stackoverflow.com/questions/3540288
             line = next(afile)
             for num, aline in enumerate(afile):
@@ -28,10 +29,7 @@ def random_line(fname):
             if len(line) < 80:
                 continue
 
-            if sys.version_info[0] == 2:
-                return unicode(line)
-            else:
-                return line
+            return line
 
 def corpus(set=def_set, name=def_text):
     "Return abspath of selected corpus"

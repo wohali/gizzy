@@ -71,13 +71,13 @@ def generate_madlib(state):
     ddict = defaultdict(list)
 
     for (index, token) in enumerate(doc):
-        if token.pos_ not in ['PUNCT']:
+        if token.pos_ not in ['PUNCT', 'X']:
             ddict[token].append(index)
 
     slist = sorted(ddict, key=lambda t: t.prob)
 
     # build list of tokens+whitespace from parsed output
-    sents = map(lambda x: x.string, list(doc))
+    words = map(lambda x: x.string, list(doc))
 
     # 2 subs + 1 more per word wrap line
     limit = min(len(line) / 80 + 2, 6)
@@ -85,12 +85,14 @@ def generate_madlib(state):
     slots = []
     for t in slist[:limit]:
         for ctr in ddict[t]:
-            sents[ctr] = u"__" + t.pos_ + "__" + t.whitespace_
+            words[ctr] = underline + u"  " + t.pos_ + "  " +\
+                    underline + t.whitespace_
             slots.append(ctr)
 
     slots.sort()
 
-    state['text'] = "".join(sents)
+    state['doc'] = doc
+    state['text'] = "".join(words)
     state['textshape'] = slots
 
 
@@ -106,6 +108,7 @@ def startround(msg, state):
     state['round'] += 0.25
     state['votes'] = { k: -1 for k, v in state['votes'].items() }
     state['entries'] = []
+    state['skippers'] = set()
 
     try:
         generate_madlib(state)
@@ -114,26 +117,40 @@ def startround(msg, state):
         log.debug("Corpus open failed: " + str(e))
         killgame(state)
 
+    # give 10s more time for each add'l 80-char line
+    entrytime = state['options']['roundlen'] + \
+            (floor(len(state['text']) / 80) - 1) * 10
+
     msg.reply("======= Starting Round {0}/{1} =======".format(
             int(state['round']), state['options']['numrounds']
     ))
-    msg.reply(state['text'])
+    if state['options']['hidesentence']:
+        poslist = []
+        for idx in state['textshape']:
+            poslist.append(state['doc'][idx].pos_)
+        text = "Hidden sentence! Give me: "
+        text += ", ".join(poslist)
+
+    else:
+        text = state['text']
+    msg.reply(text)
     msg.reply("Entries should be of the form " + underline + 
             "word word ..." + underline)
     msg.reply("--> Send your entries to me VIA MESSAGE, you have " +\
-            "{} seconds".format(state['options']['roundlen'])
+            "{} seconds".format(entrytime)
     )
 
     t = threading.Timer(
-            state['options']['roundlen'],
+            entrytime,
             voteround,
             args=(msg, state)
     )
     t.start()
     state['threads'][t.ident] = t
     t2 = threading.Timer(
-            state['options']['roundlen'] - state['options']['warntime'],
-            warntime, args=(msg, state)
+            entrytime - state['options']['warntime'],
+            warntime,
+            args=(msg, state)
     )
     t2.start()
     state['threads'][t2.ident] = t2
@@ -141,17 +158,44 @@ def startround(msg, state):
 def processentry(msg, state):
     "Process a submitted Mad Lib word list entry."
     try:
+        if msg.text.strip().lower() == "!skip":
+            state['skippers'].add(msg.nick)
+        if len(state['skippers']) == 3:
+            msg.reply("OK, you don't like that one! " +\
+                    bold + "Restarting round.")
+            killgame(state, reset=False)
+            round -= 0.5
+            startround(msg, state)
+
         if msg.sender[0] == '#':
-            # ignore public statements
+            # ignore public statements other than !skip
             return
 
         entry = msg.text.strip()
         words = [x.strip() for x in entry.split()]
 
+
+        # search for stopwords
+        stopwords = [x for x in words \
+                if x.lower() in state['options']['stopwords']]
+        if stopwords:
+            msg.reply("Entry " + bold + "rejected" + bold +\
+                    ", stopword(s) found: " + ", ".join(stopwords)
+            )
+            return
+
         if len(words) == len(state['textshape']):
+            resp = "Entry accepted."
+            # remove any previous entry
+            for ent in state['entries']:
+                if ent[0] == msg.nick:
+                    state['entries'].remove(ent)
+                    resp = "Entry changed."
+                    break
             state['entries'].append((msg.nick, words, 0))
             state['votes'][msg.nick] = -1
-            msg.reply("Entry accepted.")
+            msg.reply(resp)
+
         else:
             msg.reply("Entry " + bold + "rejected" + bold +\
                     ", expected {1} words and got {0}".format(
@@ -172,26 +216,38 @@ def voteround(msg, state):
         msg.reply(bold + "ACHTUNG! No entries received! Ending game.")
         killgame(state)
 
+    # give 10s more vote time for >3 entries
+    votetime = state['options']['votetime'] + \
+        (len(state['entries']) - 3) * 10
+
     random.shuffle(state['entries'])
 
     msg.reply("=======  Entries Received  =======")
     for num, ent in enumerate(state['entries'], start=1):
-        msg.reply("Entry {0}: {1}".format(num, ', '.join(ent[1])))
+        doc = [x.string for x in list(state['doc'])]
+        # substitute words keeping original trailing whitespace
+        for idx, word in enumerate(ent[1]):
+            wordidx = state['textshape'][idx]
+            doc[wordidx] = bold + word + bold + \
+                    state['doc'][wordidx].whitespace_
+        text = "".join(doc)
+
+        msg.reply("Entry {0}: {1}".format(num, text))
 
     msg.reply("=======  Voting Time!!!!!  =======")
     msg.reply("Send your vote (number) to me VIA MESSAGE, you have " +
-            "{} seconds".format(state['options']['votetime'])
+            "{} seconds".format(votetime)
     )
 
     t = threading.Timer(
-            state['options']['votetime'],
+            votetime,
             endround,
             args=(msg, state)
     )
     t.start()
     state['threads'][t.ident] = t
     t2 = threading.Timer(
-            state['options']['votetime'] - state['options']['warntime'],
+            votetime - state['options']['warntime'],
             warntime,
             args=(msg, state)
     )
@@ -232,6 +288,7 @@ def processvote(msg, state):
 def endround(msg, state):
     "End a round of Mad Libs."
     state['round'] += 0.25
+    state['doc'] = None
     state['text'] = ""
     state['textshape'] = []
 
@@ -263,10 +320,10 @@ def endround(msg, state):
         msg.reply("Round {0}/{1} starts in {2} seconds.".format(
                 int(ceil(state['round'])),
                 state['options']['numrounds'],
-                state['options']['interround']
+                state['options']['intertime']
         ))
         t = threading.Timer(
-                state['options']['interround'],
+                state['options']['intertime'],
                 startround,
                 args=(msg, state)
         )
@@ -275,24 +332,50 @@ def endround(msg, state):
 
 def endgame(msg, state):
     "End a game of Mad Libs."
-    slist = []
-    for key, value in sorted(state['scores'].iteritems(),
-            key=lambda (k,v): (v,k),
-            reverse=True):
-        slist.append((key, value))
+    slist = sorted(iter(foo.items()),
+            key=lambda k: k[1],
+            reverse=True
+    )
+
+    winners = [slist[0]]
+    for player in slist[1:]:
+        if player[1] == slist[0][1]:
+            winners.append(player[0])
+        else:
+            break
 
     msg.reply(bold + "=======     GAME OVER!     =======" + bold)
-    if len(slist):
-        msg.reply("Winner with a score of {1}: {0}!".format(
-                slist[0][0], slist[0][1]
-        ))
-        for player in slist:
-            msg.reply("{0}: {1}".format(player[0], player[1]))
+    msg.reply("Winner" + ("s" if len(winners) > 1 else "") + \
+            " with a score of " + slist[0][1] + ": " +\
+            bold + ", ".join(winners[:-1]) + \
+            (" and " if len(winners) > 1 else "") + \
+            winners[-1] + "!"
+    )
 
+    while slist:
+        if len(slist) >= 3:
+            msg.reply(
+                    "{:>15}: {:>2} {:>15}: {:>2} {:>15}: {:>2}".format(
+                    slist[0][0], slist[0][1],
+                    slist[1][0], slist[1][1],
+                    slist[2][0], slist[2][1]
+            ))
+            del slist[0:3]
+        elif len(slist) == 2:
+            msg.reply(
+                    "{:>15}: {:>2} {:>15}: {:>2}".format(
+                    slist[0][0], slist[0][1],
+                    slist[1][0], slist[1][1]
+            ))
+            del slist[0:2]
+        else:
+            msg.reply("{:>15}: {:>2}".format(slist[0][0], slist[0][1]))
+            del slist[0]
+        
     # be safe, kill any lingering threads
     killgame(state)
 
-def killgame(state):
+def killgame(state, reset=True):
     if state['round'] == 0:
         return
     for t in state['threads'].itervalues():
@@ -300,13 +383,15 @@ def killgame(state):
             t.cancel()
         except AttributeError:
             continue
-    reset(state)
+    if reset:
+        resetstate(state)
 
-def reset(state):
+def resetstate(state):
     state.update({
 	    # Round number, 0=no game running
         'round': 0,
         # Round's game text and shape of removed words
+        'doc': None,
         'text': '',
         'textshape': [],
         # Pending entries: [(nick, [words], votes), ...]
@@ -318,7 +403,9 @@ def reset(state):
         # Threads on timers, keyed by thread ident
         'threads': {},
         # Absolute path to corpus file
-        'corpus': None
+        'corpus': None,
+        # set of skippers
+        'skippers': set()
     })
 
 
@@ -328,11 +415,11 @@ def startgame(msg, state):
     msg.reply("Welcome to super duper amazing Mad Libs game!")
     msg.reply("Round 1/{0} starts in {1} seconds.".format(
             state['options']['numrounds'],
-            state['options']['interround']
+            state['options']['intertime']
     ))
     state['round'] = 0.75
     t = threading.Timer(
-            state['options']['interround'],
+            state['options']['intertime'],
             startround,
             args=(msg, state)
     )
@@ -397,25 +484,30 @@ def process(msg, state):
     elif state['round'] % 1 == 0.5:
         # Voting phase
         processvote(msg, state)
-    # interround 0.75 state falls through with no action
+    # intertime 0.75 state falls through with no action
 
 def load():
     statedict = {
         # Default game options
         'options': {
-            'interround': 20,
-            'roundlen': 120,
-            'votetime': 75,
-            'warntime': 15,
+            # game length and timing options
             'numrounds': 8,
-            'linemaxlen': 400,
+            'entrytime': 90,
+            'votetime': 80,
+            'warntime': 15,
+            'intertime': 15,
+            # gameplay options
+            'hidesentence': False,
+            'botplays': False,
             'corporaset': 'McGuffey',
             'corpus': 'None',
-            'botplays': False,
-            'shame': True
+            'linemaxlen': 400,
+            'shame': True,
+            'stopwords': ["cosby", "urkel", "huxtable", "arvid",
+                    "imhotep", "shumway", "dodonga"]
         }
     }
-    reset(statedict)
+    resetstate(statedict)
     return statedict
 
 def unload(state):
