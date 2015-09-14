@@ -13,7 +13,9 @@ import threading
 from collections import defaultdict
 from gizzylib import nlp
 from itertools import repeat
-from math import ceil
+from math import ceil, floor
+from numpy import dot
+from numpy.linalg import norm
 
 bold = irc.style("bold")
 underline = irc.style("underline")
@@ -36,23 +38,29 @@ def gamethread(func):
 
 def generate_madlib(state):
     """Generates a Mad Lib from a line out of the chosen corpus."""
-    if not state['corpus']:
-        if state['options']['corpus'] == "None":
-            name = None
-        else:
-            name = state['options']['corpus']
-        if state['options']['corporaset'] == "None":
-            set = None
-        else:
-            set = state['options']['corporaset']
+    line = None
+    while not line:
+        if not state['corpus']:
+            if state['options']['corpus'] == "None":
+                name = None
+            else:
+                name = state['options']['corpus']
+            if state['options']['corporaset'] == "None":
+                set = None
+            else:
+                set = state['options']['corporaset']
+    
+            # will raise IOError if corpus invalid
+            if name:
+                state['corpus'] = nlp.corpus(set=set, name=name)
+            else:
+                state['corpus'] = nlp.random_corpus(set=set)
+    
+        try:
+            line = nlp.random_line(state['corpus'])
+        except UnicodeDecodeError:
+            state['corpus'] == None
 
-        # will raise IOError if corpus invalid
-        if name:
-            state['corpus'] = nlp.corpus(set=set, name=name)
-        else:
-            state['corpus'] = nlp.random_corpus(set=set)
-
-    line = nlp.random_line(state['corpus'])
     doc = nlp.nlp(line)
 
     # truncate line if too long
@@ -71,7 +79,7 @@ def generate_madlib(state):
     ddict = defaultdict(list)
 
     for (index, token) in enumerate(doc):
-        if token.pos_ not in ['PUNCT', 'X']:
+        if token.pos_ in ['ADJ', 'ADV', 'NOUN', 'VERB']:
             ddict[token].append(index)
 
     slist = sorted(ddict, key=lambda t: t.prob)
@@ -118,8 +126,8 @@ def startround(msg, state):
         killgame(state)
 
     # give 10s more time for each add'l 80-char line
-    entrytime = state['options']['roundlen'] + \
-            (floor(len(state['text']) / 80) - 1) * 10
+    entrytime = int(state['options']['entrytime'] + \
+            (floor(len(state['text']) / 80) - 1) * 10)
 
     msg.reply("======= Starting Round {0}/{1} =======".format(
             int(state['round']), state['options']['numrounds']
@@ -154,6 +162,14 @@ def startround(msg, state):
     )
     t2.start()
     state['threads'][t2.ident] = t2
+    if not state['options']['botplays']:
+        return
+    t3 = threading.Thread(
+            target=botentry,
+            args=(msg, state)
+    )
+    t3.start()
+    state['threads'][t3.ident] = t3
 
 def processentry(msg, state):
     "Process a submitted Mad Lib word list entry."
@@ -208,17 +224,50 @@ def processentry(msg, state):
         log.debug(str(e))
 
 @gamethread
+def botentry(msg, state):
+    """Generate a response based on the original text.
+    Warning, may take 30-60s to complete. Do not set entrytime
+    very low!"""
+    if 'words' not in state:
+        # expensive initialization, do ALAP
+        log.debug("Loading words...")
+        state['words'] = [w for w in nlp.nlp.vocab if w.has_repvec]
+    cosine = lambda v1, v2: dot(v1, v2) / (norm(v1) * norm(v2))
+
+    entry = []
+    for t in state['textshape']:
+        try:
+            state['words'].sort(key=lambda w: 
+                    cosine(w.repvec, state['doc'][t].repvec)
+            )
+            state['words'].reverse
+        except TypeError:
+            # perhaps our word lacks a repvec?
+            pass
+        # Go 100-1000 words away for absurd but not totally random
+        entry.append(
+                state['words'][random.randint(100, 1000)].orth_.lower()
+        )
+        log.debug("Word found: " + entry[-1])
+    log.debug("Bot enters: " + ", ".join(entry))
+    state['entries'].append((config.nick, entry, 0))
+    # no entry in state['votes']
+
+@gamethread
 def voteround(msg, state):
     "Start the voting portion of a Mad Libs round."
     state['round'] += 0.5
 
-    if len(state['entries']) == 0:
+    if len(state['entries']) == 0 \
+            or (state['options']['botplays'] and \
+            len(state['entries']) == 1):
         msg.reply(bold + "ACHTUNG! No entries received! Ending game.")
         killgame(state)
+        return
 
     # give 10s more vote time for >3 entries
-    votetime = state['options']['votetime'] + \
-        (len(state['entries']) - 3) * 10
+    votetime = int(state['options']['votetime'] + \
+        (len(state['entries']) - 3) * 10)
 
     random.shuffle(state['entries'])
 
@@ -332,7 +381,7 @@ def endround(msg, state):
 
 def endgame(msg, state):
     "End a game of Mad Libs."
-    slist = sorted(iter(foo.items()),
+    slist = sorted(iter(state['scores'].items()),
             key=lambda k: k[1],
             reverse=True
     )
