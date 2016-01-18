@@ -2,8 +2,6 @@
 The Mad Libs gaming bot.
 """
 
-# TODO: Bot should play as well!
-
 from __future__ import unicode_literals
 import os
 import random
@@ -122,7 +120,7 @@ def startround(msg, state):
         generate_madlib(state)
     except IOError as e:
         msg.reply("Unable to locate corpus. Aborting game.")
-        log.debug("Corpus open failed: " + str(e))
+        log.error("Corpus open failed: " + str(e))
         killgame(state)
 
     # give 10s more time for each add'l 80-char line
@@ -132,6 +130,10 @@ def startround(msg, state):
     msg.reply("======= Starting Round {0}/{1} =======".format(
             int(state['round']), state['options']['numrounds']
     ))
+    log.info("======= Starting Round {0}/{1} =======".format(
+            int(state['round']), state['options']['numrounds']
+    ))
+
     if state['options']['hidesentence']:
         poslist = []
         for idx in state['textshape']:
@@ -142,6 +144,7 @@ def startround(msg, state):
     else:
         text = state['text']
     msg.reply(text)
+    log.info(text)
     msg.reply("Entries should be of the form " + underline + 
             "word word ..." + underline)
     msg.reply("--> Send your entries to me VIA MESSAGE, you have " +\
@@ -209,6 +212,7 @@ def processentry(msg, state):
                     resp = "Entry changed."
                     break
             state['entries'].append((msg.nick, words, 0))
+            log.info("{0} entry: {1}".format(msg.nick, ", ".join(words)))
             state['votes'][msg.nick] = -1
             msg.reply(resp)
 
@@ -221,7 +225,7 @@ def processentry(msg, state):
     except Exception as e:
         msg.reply("Entry " + bold + "rejected" + bold + \
                 ", unexpected error")
-        log.debug(str(e))
+        log.error(str(e))
 
 @gamethread
 def botentry(msg, state):
@@ -230,26 +234,48 @@ def botentry(msg, state):
     very low!"""
     if 'words' not in state:
         # expensive initialization, do ALAP
-        log.debug("Loading words...")
-        state['words'] = [w for w in nlp.nlp.vocab if w.has_repvec]
-    cosine = lambda v1, v2: dot(v1, v2) / (norm(v1) * norm(v2))
+        log.info("Loading word corpus...")
+        state['words'] = [w for w in nlp.nlp.vocab if w.has_vector]
+    #cosine = lambda v1, v2: dot(v1, v2) / (norm(v1) * norm(v2))
 
     entry = []
     for t in state['textshape']:
+        log.debug("Searching for replacement for {0} ({1})".format(
+            state['doc'][t], state['doc'][t].pos_
+        ))
         try:
             state['words'].sort(key=lambda w: 
-                    cosine(w.repvec, state['doc'][t].repvec)
+                    w.similarity(state['doc'][t]),
+                    reverse=True
             )
+                    #cosine(w.vector, state['doc'][t].vector)
             state['words'].reverse
         except TypeError:
-            # perhaps our word lacks a repvec?
+            # perhaps our word lacks a vector?
             pass
-        # Go 100-1000 words away for absurd but not totally random
-        entry.append(
-                state['words'][random.randint(100, 1000)].orth_.lower()
-        )
-        log.debug("Word found: " + entry[-1])
-    log.debug("Bot enters: " + ", ".join(entry))
+
+        if state['options']['matchpos']:
+            sent = [x.string for x in list(state['doc'])]
+            pos = state['doc'][t].pos_
+            for ctr in range(10):
+                # TODO: Parametrize the bounds on random here
+                newword = state['words'][random.randint(50, 500)]
+                log.debug("Trying " + newword.orth_.lower())
+                sent[t] = newword.orth_.lower() + " "
+                newsent = nlp.nlp("".join(sent))
+                if newsent[t].pos_ == pos:
+                    break
+            entry.append(newword.orth_.lower())
+            log.debug("Word found: {0} ({1})".format(
+                entry[-1], newsent[t].pos_
+            ))
+        else:
+            entry.append(
+                state['words'][random.randint(50, 500)].orth_.lower()
+            )
+            log.debug("Word found: " + entry[-1])
+
+    log.info("Bot enters: " + ", ".join(entry))
     state['entries'].append((config.nick, entry, 0))
     # no entry in state['votes']
 
@@ -324,14 +350,14 @@ def processvote(msg, state):
             msg.reply("Vote changed.")
 
         state['votes'][msg.sender] = voted
-        log.debug("{0} voting for {1}".format(msg.sender,
+        log.info("{0} voting for {1}".format(msg.sender,
                 state['entries'][voted][0]))
 
     except Exception as e:
         msg.reply("Vote " + bold + "rejected" + bold + \
                 ", unexpected error"
         )
-        log.debug(str(e))
+        log.error(str(e))
 
 @gamethread
 def endround(msg, state):
@@ -351,8 +377,12 @@ def endround(msg, state):
             state['entries'][vote] = ( ent[0], ent[1], ent[2]+1 )
 
     msg.reply("=======   Voting Results   =======")
+    log.info("=======   Voting Results   =======")
     for num, ent in enumerate(state['entries']):
         msg.reply("Entry {0}: {1}: {2} => {3}".format(
+                num+1, ent[0], ", ".join(ent[1]), ent[2]
+        ))
+        log.info("Entry {0}: {1}: {2} => {3}".format(
                 num+1, ent[0], ", ".join(ent[1]), ent[2]
         ))
         state['scores'][ent[0]] += ent[2]
@@ -394,6 +424,7 @@ def endgame(msg, state):
             break
 
     msg.reply(bold + "=======     GAME OVER!     =======" + bold)
+    log.info(bold + "=======     GAME OVER!     =======" + bold)
     msg.reply("Winner" + ("s" if len(winners) > 1 else "") + \
             " with a score of " + slist[0][1] + ": " +\
             bold + ", ".join(winners[:-1]) + \
@@ -409,6 +440,12 @@ def endgame(msg, state):
                     slist[1][0], slist[1][1],
                     slist[2][0], slist[2][1]
             ))
+            log.info(
+                    "{:>15}: {:>2} {:>15}: {:>2} {:>15}: {:>2}".format(
+                    slist[0][0], slist[0][1],
+                    slist[1][0], slist[1][1],
+                    slist[2][0], slist[2][1]
+            ))
             del slist[0:3]
         elif len(slist) == 2:
             msg.reply(
@@ -416,9 +453,15 @@ def endgame(msg, state):
                     slist[0][0], slist[0][1],
                     slist[1][0], slist[1][1]
             ))
+            log.info(
+                    "{:>15}: {:>2} {:>15}: {:>2}".format(
+                    slist[0][0], slist[0][1],
+                    slist[1][0], slist[1][1]
+            ))
             del slist[0:2]
         else:
             msg.reply("{:>15}: {:>2}".format(slist[0][0], slist[0][1]))
+            log.info("{:>15}: {:>2}".format(slist[0][0], slist[0][1]))
             del slist[0]
         
     # be safe, kill any lingering threads
@@ -434,6 +477,7 @@ def killgame(state, reset=True):
             continue
     if reset:
         resetstate(state)
+    log.info("Game killed.")
 
 def resetstate(state):
     state.update({
@@ -547,11 +591,12 @@ def load():
             'intertime': 15,
             # gameplay options
             'hidesentence': False,
-            'botplays': False,
+            'botplays': True,
             'corporaset': 'McGuffey',
             'corpus': 'None',
             'linemaxlen': 400,
             'shame': True,
+            'matchpos': True,
             'stopwords': ["cosby", "urkel", "huxtable", "arvid",
                     "imhotep", "shumway", "dodonga"]
         }
